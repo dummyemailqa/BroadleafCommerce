@@ -1,0 +1,55 @@
+# Name of this GitHub Actions workflow.
+name: Semgrep OSS scan
+
+on:
+  # Scan changed files in PRs (diff-aware scanning):
+  pull_request: {}
+  # Scan on-demand through GitHub Actions interface:
+  workflow_dispatch: {}
+  # Scan mainline branches and report all findings:
+  push: {}
+  #  branches: ["master", "main"]
+  # Schedule the CI job (this method uses cron syntax):
+  # schedule:
+    # - cron: '20 17 * * *' # Sets Semgrep to scan every day at 17:20 UTC.
+    # It is recommended to change the schedule to a random time.
+
+jobs:
+  semgrep:
+    # User definable name of this GitHub Actions job.
+    name: semgrep-oss/scan
+    # If you are self-hosting, change the following `runs-on` value: 
+    runs-on: ubuntu-latest
+
+    container:
+      # A Docker image with Semgrep installed. Do not change this.
+      image: semgrep/semgrep
+
+    # Skip any PR created by dependabot to avoid permission issues:
+    if: (github.actor != 'dependabot[bot]')
+
+    steps:     
+      - name: "Run number"
+        run: echo "${{ github.run_number }}"
+      - name: "Set baseline commit for push"
+        if: (github.event_name == 'push' && github.run_number > 1)
+        env: 
+          TMP_SHA: ${{github.event.before}}
+        run: echo "SEMGREP_BASELINE_COMMIT=$TMP_SHA" >> "$GITHUB_ENV"
+      - name: "Set baseline commit for pull_request"
+        if: (github.event_name == 'pull_request' && github.run_number > 1)
+        env: 
+          TMP_SHA: ${{github.event.pull_request.base.sha}}
+        run: echo "SEMGREP_BASELINE_COMMIT=$TMP_SHA" >> "$GITHUB_ENV"        
+      - run: echo $SEMGREP_BASELINE_COMMIT
+      - run: echo $GITHUB_SHA
+      # Fetch project source with GitHub Actions Checkout. Use either v3 or v4.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Run the "semgrep scan" command on the command line of the docker image.
+      - run: semgrep scan --config auto --sarif --sarif-output=semgrep-results.sarif
+      - uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-results.sarif
+          path: semgrep-results.sarif
